@@ -1,0 +1,13 @@
+# Logs
+*.log
+
+# Backups
+*.backup
+*.bak
+leadx_backup.json
+
+# Local config / system files
+.gemini/
+.system_generated/
+.DS_Store
+Thumbs.db
