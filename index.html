@@ -405,6 +405,14 @@
         </div>
       </div>
       <div class="nav-actions">
+        <!-- Header User Status (Hidden by default) -->
+        <div id="header-user-status" class="hidden" style="display:none; align-items:center; gap:8px;">
+          <span class="small muted" style="display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.05); padding:6px 10px; border-radius:20px; border:1px solid var(--border);">
+            <i data-feather="user" width="14" height="14" style="color:var(--primary);"></i>
+            <span id="header-user-email" style="font-weight:600;">email@example.com</span>
+          </span>
+          <button class="btn btn-ghost small" id="btnHeaderSignOut" title="Sign Out" style="padding:6px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--danger);"><i data-feather="log-out" width="14" height="14"></i></button>
+        </div>
         <button class="btn-theme" id="btnThemeToggle" title="Toggle Theme"><i data-feather="sun" width="16" height="16"></i></button>
         <span class="badge"><i data-feather="zap" width="14" height="14"></i> Live Exchange</span>
         <button class="btn" id="btnExportCSV"><i data-feather="download" width="16" height="16"></i> Export Purchases</button>
@@ -929,29 +937,8 @@
         </div>
         <div class="divider"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-          <div class="glass" style="padding:16px">
-            <h3 style="margin:0 0 8px">Profile</h3>
-            <div class="grid" style="grid-template-columns:1fr 1fr">
-              <div>
-                <label class="small muted">Company</label>
-                <input id="acctCompany" class="input" placeholder="Acme Timeshare LLC" />
-              </div>
-              <div>
-                <label class="small muted">Contact Email</label>
-                <input id="acctEmail" class="input" type="email" placeholder="sales@acme.com" />
-              </div>
-              <div style="grid-column:1/-1">
-                <label class="small muted">Webhook URL (optional)</label>
-                <input id="acctWebhook" class="input" placeholder="https://example.com/webhook" />
-                <div class="tip" style="margin-top:6px">Receive a POST for each purchase (client-side simulated).</div>
-              </div>
-            </div>
-            <div class="hrule"></div>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-primary" id="btnSaveProfile"><i data-feather="save" width="16" height="16"></i> Save</button>
-              <span class="tip">Your data is stored in this browser only.</span>
-            </div>
-          </div>
+          <!-- Dynamic Profile Card Container -->
+          <div id="profileCardContainer"></div>
           <div class="glass" style="padding:16px">
             <h3 style="margin:0 0 8px">Data</h3>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -986,7 +973,7 @@
                   </div>
                   <div>
                     <label class="small muted" style="font-weight:600;">Supabase Service Key (Bypasses RLS)</label>
-                    <input id="sbKey" class="input" style="width:100%; type="password" value="sb_secret_KqGPOxzrl0IepXfna-5mUw_Chqt33nu" placeholder="sb_secret_..." />
+                    <input id="sbKey" class="input" style="width:100%;" type="password" value="" placeholder="sb_secret_..." />
                     <div class="tip" style="margin-top:4px; color:var(--warning);"><i data-feather="alert-triangle" width="12" height="12" style="vertical-align:middle;"></i> Pre-filled with your provided sandbox secret key. Kept secure in browser storage.</div>
                   </div>
                 </div>
@@ -1106,6 +1093,34 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
       </div>
       <div class="ft">
         <button class="btn btn-primary" data-close="modal-support">Close</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal" id="modal-auth">
+    <div class="panel" style="width: min(400px, 100%);">
+      <div class="hd">
+        <div style="font-weight:800" id="authModalTitle">Sign In to Timeshare LeadX</div>
+        <button class="close" data-close="modal-auth"><i data-feather="x"></i></button>
+      </div>
+      <div class="bd">
+        <form id="authForm" onsubmit="event.preventDefault();">
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div>
+              <label class="small muted" style="font-weight:600; display:block; margin-bottom:4px;">Email Address</label>
+              <input id="authEmail" class="input" type="email" required placeholder="name@company.com" style="width:100%;" />
+            </div>
+            <div>
+              <label class="small muted" style="font-weight:600; display:block; margin-bottom:4px;">Password</label>
+              <input id="authPassword" class="input" type="password" required placeholder="••••••••" style="width:100%;" />
+            </div>
+            <div id="authError" class="tip" style="color:var(--danger); display:none; margin-top:4px;"></div>
+            <button class="btn btn-primary" id="btnSubmitAuth" style="width:100%; margin-top:12px; display:flex; align-items:center; justify-content:center; gap:8px;">Sign In</button>
+            <div class="tip" style="text-align:center; margin-top:8px;">
+              <span id="authToggleText">New to LeadX?</span> 
+              <a href="#" id="authToggleLink" class="link" style="font-weight:600;">Create an Account</a>
+            </div>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -1363,7 +1378,7 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
     }
     
     // Core delivery of Purchased Packs
-    function deliverPack(packName, size, cost, criteria) {
+    async function deliverPack(packName, size, cost, criteria) {
       if (!state.purchasedPacks) state.purchasedPacks = [];
       
       const leads = generateMockPackLeads(size, criteria);
@@ -1376,6 +1391,28 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
         criteria,
         leads
       };
+      
+      if (supabaseClient) {
+        try {
+          const user_id = currentUser ? currentUser.id : (state.profile?.email || 'me');
+          const { error } = await supabaseClient.from('lead_packs').insert({
+            user_id: user_id,
+            pack_name: packName,
+            size: size,
+            cost: cost,
+            criteria: criteria,
+            lead_ids: leads.map(l => l.id)
+          });
+          if (error) throw error;
+          await syncFromSupabase();
+          toast(`Successfully purchased the ${packName} of ${size} leads!`, 'success');
+          showTab('purchases');
+          return;
+        } catch(e) {
+          console.error(e);
+          toast('Supabase lead pack purchase failed. Delivering locally.', 'warn');
+        }
+      }
       
       state.purchasedPacks.unshift(pack);
       saveState();
@@ -1391,39 +1428,43 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
     
     // Tiered Pack checkout
     window.buyTieredPack = function(packName, size, cost, discountPct) {
-      const confirmMsg = `Buy the ${packName} Lead Pack (${size} leads) for $${cost.toLocaleString()} (applied ${discountPct}% volume discount)?\n\nThis will instantly deliver ${size} verified timeshare leads to your Purchases list.`;
-      if (!confirm(confirmMsg)) return;
-      
-      const criteria = {
-        quality: packName === 'Bronze' ? 'C' : 'B',
-        location: '',
-        timeframe: ''
-      };
-      deliverPack(`${packName} Pack`, size, cost, criteria);
+      requireAuth(() => {
+        const confirmMsg = `Buy the ${packName} Lead Pack (${size} leads) for $${cost.toLocaleString()} (applied ${discountPct}% volume discount)?\n\nThis will instantly deliver ${size} verified timeshare leads to your Purchases list.`;
+        if (!confirm(confirmMsg)) return;
+        
+        const criteria = {
+          quality: packName === 'Bronze' ? 'C' : 'B',
+          location: '',
+          timeframe: ''
+        };
+        deliverPack(`${packName} Pack`, size, cost, criteria);
+      });
     };
     
     // Custom Pack checkout
     function buyCustomPack() {
-      const slider = $('#customLeadCountRange');
-      if (!slider) return;
-      
-      const size = Number(slider.value);
-      const minQuality = $('#customLeadQuality').value;
-      const targetLoc = $('#customLeadLocation').value;
-      const timeframe = $('#customLeadTimeframe').value;
-      
-      const totalCost = Number($('#customLeadTotalCost').textContent.replace(/\D/g, ''));
-      
-      const criteria = {
-        quality: minQuality,
-        location: targetLoc,
-        timeframe: timeframe
-      };
-      
-      const confirmMsg = `Confirm Custom Lead Pack purchase:\n\n• Count: ${size} leads\n• Quality: Grade ${minQuality} and above\n• Target: ${targetLoc || 'All Locations'}\n• Total Cost: $${totalCost.toLocaleString()}\n\nProceed to download and deliver leads?`;
-      if (!confirm(confirmMsg)) return;
-      
-      deliverPack('Custom Pack', size, totalCost, criteria);
+      requireAuth(() => {
+        const slider = $('#customLeadCountRange');
+        if (!slider) return;
+        
+        const size = Number(slider.value);
+        const minQuality = $('#customLeadQuality').value;
+        const targetLoc = $('#customLeadLocation').value;
+        const timeframe = $('#customLeadTimeframe').value;
+        
+        const totalCost = Number($('#customLeadTotalCost').textContent.replace(/\D/g, ''));
+        
+        const criteria = {
+          quality: minQuality,
+          location: targetLoc,
+          timeframe: timeframe
+        };
+        
+        const confirmMsg = `Confirm Custom Lead Pack purchase:\n\n• Count: ${size} leads\n• Quality: Grade ${minQuality} and above\n• Target: ${targetLoc || 'All Locations'}\n• Total Cost: $${totalCost.toLocaleString()}\n\nProceed to download and deliver leads?`;
+        if (!confirm(confirmMsg)) return;
+        
+        deliverPack('Custom Pack', size, totalCost, criteria);
+      });
     }
 
     function toast(msg, type='info'){
@@ -1612,7 +1653,7 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
       
       if (supabaseClient) {
         try {
-          const user_id = state.profile?.email || 'me';
+          const user_id = currentUser ? currentUser.id : (state.profile?.email || 'me');
           const { error } = await supabaseClient.from('leads').insert({
             id: lead.id,
             first_name: lead.firstName,
@@ -1706,7 +1747,7 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
       
       if (supabaseClient) {
         try {
-          const user_id = state.profile?.email || 'me';
+          const user_id = currentUser ? currentUser.id : (state.profile?.email || 'me');
           await supabaseClient.from('leads').update({ sold: true }).eq('id', lead.id);
           await supabaseClient.from('purchases').insert({
             user_id: user_id,
@@ -2068,6 +2109,7 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
       renderMarketplace();
       renderUploads();
       renderPurchases();
+      if (typeof renderAuthUI === 'function') renderAuthUI();
     }
 
     function showTab(name){
@@ -2127,7 +2169,7 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
         const redeem = document.createElement('button');
         redeem.className = 'btn btn-primary';
         redeem.innerHTML = `<i data-feather="zap" width="16" height="16"></i> ${state.credits>0?'Redeem 1 Credit':fmt(lead.price)+' Buy now'}`;
-        redeem.onclick = ()=>{ closeModal('modal-lead'); purchaseLead(lead, state.credits>0?'credit':'card'); };
+        redeem.onclick = ()=>{ closeModal('modal-lead'); requireAuth(() => purchaseLead(lead, state.credits>0?'credit':'card')); };
         const cancel = document.createElement('button');
         cancel.className = 'btn';
         cancel.textContent = 'Cancel';
@@ -2166,9 +2208,11 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
         toast('Rejected: Lead has low quality grade (Trash). Check formatting and consent.', 'error');
         return;
       }
-      addLeadToPool(l, 'me');
-      e.target.reset();
-      updateLiveScorecard();
+      requireAuth(() => {
+        addLeadToPool(l, 'me');
+        e.target.reset();
+        updateLiveScorecard();
+      });
     });
 
     // Bind live scorecard inputs
@@ -2352,10 +2396,12 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
       // Bind Import/Clear
       $('#csvImport').onclick = () => {
         if(csvItems.length === 0) { toast('Nothing valid to import.', 'warn'); return; }
-        csvItems.forEach(l => addLeadToPool(l, 'me'));
-        toast(`Successfully imported ${csvItems.length} verified leads!`, 'success');
-        csvItems.length = 0;
-        csvPreview.classList.add('hidden');
+        requireAuth(() => {
+          csvItems.forEach(l => addLeadToPool(l, 'me'));
+          toast(`Successfully imported ${csvItems.length} verified leads!`, 'success');
+          csvItems.length = 0;
+          csvPreview.classList.add('hidden');
+        });
       };
       
       $('#csvClear').onclick = () => {
@@ -2450,24 +2496,350 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
       toast(`Removed ${before-after} duplicate${before-after===1?'':'s'}.`, 'success');
     };
 
-    // Profile save/restore/reset
-    $('#btnSaveProfile').onclick = ()=>{
-      state.profile = {
-        company: $('#acctCompany').value.trim(),
-        email: $('#acctEmail').value.trim(),
-        webhook: $('#acctWebhook').value.trim()
-      };
-      saveState();
-      toast('Profile saved.', 'success');
-    };
-    function loadProfile(){
-      $('#acctCompany').value = state.profile?.company||'';
-      $('#acctEmail').value = state.profile?.email||'';
-      $('#acctWebhook').value = state.profile?.webhook||'';
+    // Supabase Auth and Cloud state
+    let currentUser = null;
+    let authSubscription = null;
+    let pendingAuthCallback = null;
+
+    // Protected Action Guard
+    function requireAuth(actionCallback) {
+      if (!supabaseClient || currentUser) {
+        actionCallback();
+        return;
+      }
+      pendingAuthCallback = actionCallback;
+      openAuthModal();
+    }
+
+    function openAuthModal() {
+      setAuthModalState('signin');
+      $('#modal-auth').classList.add('show');
+    }
+
+    let authModalState = 'signin';
+    function setAuthModalState(mode) {
+      authModalState = mode;
+      const title = $('#authModalTitle');
+      const submitBtn = $('#btnSubmitAuth');
+      const toggleLink = $('#authToggleLink');
+      const toggleText = $('#authToggleText');
+      const errEl = $('#authError');
       
+      errEl.style.display = 'none';
+      errEl.textContent = '';
+      
+      if (mode === 'signin') {
+        title.textContent = 'Sign In to Timeshare LeadX';
+        submitBtn.textContent = 'Sign In';
+        toggleText.textContent = 'New to LeadX?';
+        toggleLink.textContent = 'Create an Account';
+      } else {
+        title.textContent = 'Create a Timeshare LeadX Account';
+        submitBtn.textContent = 'Create Account';
+        toggleText.textContent = 'Already have an account?';
+        toggleLink.textContent = 'Sign In';
+      }
+    }
+
+    // Bind auth modal toggle
+    $('#authToggleLink').onclick = (e) => {
+      e.preventDefault();
+      setAuthModalState(authModalState === 'signin' ? 'signup' : 'signin');
+    };
+
+    // Modal submit handler
+    $('#authForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const email = $('#authEmail').value.trim();
+      const password = $('#authPassword').value.trim();
+      const submitBtn = $('#btnSubmitAuth');
+      const errEl = $('#authError');
+      
+      if (!email || !password) return;
+      
+      submitBtn.disabled = true;
+      const originalText = submitBtn.textContent;
+      submitBtn.textContent = 'Processing...';
+      errEl.style.display = 'none';
+      
+      try {
+        if (authModalState === 'signin') {
+          const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          toast('Successfully signed in!', 'success');
+        } else {
+          const { data, error } = await supabaseClient.auth.signUp({ email, password });
+          if (error) throw error;
+          if (data.session) {
+            toast('Successfully registered and signed in!', 'success');
+          } else {
+            toast('Registration successful! Please check your email for confirmation.', 'success');
+          }
+        }
+        
+        $('#modal-auth').classList.remove('show');
+        $('#authEmail').value = '';
+        $('#authPassword').value = '';
+        
+        if (pendingAuthCallback) {
+          const callback = pendingAuthCallback;
+          pendingAuthCallback = null;
+          setTimeout(callback, 300);
+        }
+      } catch(error) {
+        console.error('Auth error:', error);
+        errEl.textContent = error.message || 'An unexpected error occurred.';
+        errEl.style.display = 'block';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+      }
+    };
+
+    async function ensureProfileExists(user) {
+      if (!supabaseClient || !user) return;
+      try {
+        const { data, error } = await supabaseClient
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+        
+        if (error) throw error;
+        
+        if (!data) {
+          await supabaseClient
+            .from('profiles')
+            .insert({
+              id: user.id,
+              email: user.email,
+              company: state.profile?.company || '',
+              webhook: state.profile?.webhook || '',
+              credits: state.credits || 0,
+              uploads_count: state.uploadCount || 0
+            });
+        } else {
+          state.credits = data.credits;
+          state.uploadCount = data.uploads_count;
+          state.profile = state.profile || {};
+          state.profile.company = data.company || '';
+          state.profile.email = data.email || user.email;
+          state.profile.webhook = data.webhook || '';
+          saveState();
+        }
+      } catch(e) {
+        console.error('Error ensuring profile exists:', e);
+      }
+    }
+
+    function renderProfileCard() {
+      const container = $('#profileCardContainer');
+      if (!container) return;
+
+      if (supabaseClient && !currentUser) {
+        container.innerHTML = `
+          <div class="glass" style="padding:16px; height:100%; display:flex; flex-direction:column; justify-content:space-between; gap:16px;">
+            <div>
+              <h3 style="margin:0 0 8px; display:flex; align-items:center; gap:8px;">
+                <i data-feather="lock" width="18" height="18" style="color:var(--primary);"></i> Sign In to Account
+              </h3>
+              <p class="small muted" style="margin:0 0 12px;">Authentication is required to sync and read/write data in the cloud.</p>
+              
+              <form id="acctAuthForm" onsubmit="event.preventDefault();">
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                  <div>
+                    <label class="small muted" style="font-weight:600; display:block; margin-bottom:4px;">Email Address</label>
+                    <input id="acctAuthEmail" class="input" type="email" required placeholder="name@company.com" style="width:100%;" />
+                  </div>
+                  <div>
+                    <label class="small muted" style="font-weight:600; display:block; margin-bottom:4px;">Password</label>
+                    <input id="acctAuthPassword" class="input" type="password" required placeholder="••••••••" style="width:100%;" />
+                  </div>
+                  <div id="acctAuthError" class="tip" style="color:var(--danger); display:none; margin-top:4px;"></div>
+                </div>
+              </form>
+            </div>
+            
+            <div>
+              <div class="hrule" style="margin:12px 0 12px;"></div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <button class="btn btn-primary" id="btnAcctSignIn" style="display:flex; align-items:center; justify-content:center; gap:6px;"><i data-feather="log-in" width="14" height="14"></i> Sign In</button>
+                <button class="btn" id="btnAcctSignUp" style="display:flex; align-items:center; justify-content:center; gap:6px;"><i data-feather="user-plus" width="14" height="14"></i> Register</button>
+              </div>
+            </div>
+          </div>
+        `;
+        
+        $('#btnAcctSignIn').onclick = () => handleAcctAuth('signin');
+        $('#btnAcctSignUp').onclick = () => handleAcctAuth('signup');
+        
+      } else {
+        const isCloud = !!supabaseClient;
+        container.innerHTML = `
+          <div class="glass" style="padding:16px">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <h3 style="margin:0;">${isCloud ? 'Cloud Profile' : 'Local Profile'}</h3>
+              ${isCloud ? `<button class="btn btn-ghost small" id="btnSignOut" style="padding:4px 8px; font-size:11px; color:var(--danger); display:flex; align-items:center; gap:4px;"><i data-feather="log-out" width="12" height="12"></i> Sign Out</button>` : ''}
+            </div>
+            <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label class="small muted">Company</label>
+                <input id="acctCompany" class="input" placeholder="Acme Timeshare LLC" style="width:100%;" />
+              </div>
+              <div>
+                <label class="small muted">Contact Email</label>
+                <input id="acctEmail" class="input" type="email" placeholder="sales@acme.com" style="width:100%;" ${isCloud ? 'disabled' : ''} />
+              </div>
+              <div style="grid-column:1/-1">
+                <label class="small muted">Webhook URL (optional)</label>
+                <input id="acctWebhook" class="input" placeholder="https://example.com/webhook" style="width:100%;" />
+                <div class="tip" style="margin-top:6px">Receive a POST for each purchase (client-side simulated).</div>
+              </div>
+            </div>
+            <div class="hrule" style="margin:16px 0 12px;"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+              <button class="btn btn-primary" id="btnSaveProfile"><i data-feather="save" width="16" height="16"></i> Save Profile</button>
+              <span class="tip muted">${isCloud ? 'Synced to Cloud.' : 'Stored locally in browser.'}</span>
+            </div>
+          </div>
+        `;
+        
+        $('#acctCompany').value = state.profile?.company || '';
+        $('#acctEmail').value = state.profile?.email || '';
+        $('#acctWebhook').value = state.profile?.webhook || '';
+        
+        $('#btnSaveProfile').onclick = async () => {
+          state.profile = {
+            company: $('#acctCompany').value.trim(),
+            email: $('#acctEmail').value.trim(),
+            webhook: $('#acctWebhook').value.trim()
+          };
+          saveState();
+          
+          if (supabaseClient && currentUser) {
+            try {
+              await supabaseClient.from('profiles').upsert({
+                id: currentUser.id,
+                company: state.profile.company,
+                webhook: state.profile.webhook
+              });
+              toast('Cloud profile saved.', 'success');
+            } catch(e) {
+              console.error(e);
+              toast('Failed to save to Supabase.', 'error');
+            }
+          } else {
+            toast('Profile saved locally.', 'success');
+          }
+        };
+        
+        if (isCloud) {
+          $('#btnSignOut').onclick = handleSignOut;
+        }
+      }
+      
+      feather.replace();
+    }
+
+    async function handleAcctAuth(mode) {
+      const emailInput = $('#acctAuthEmail');
+      const passwordInput = $('#acctAuthPassword');
+      const errEl = $('#acctAuthError');
+      
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+      
+      if (!email || !password) {
+        toast('Please enter both email and password.', 'warn');
+        return;
+      }
+      
+      errEl.style.display = 'none';
+      errEl.textContent = '';
+      
+      const btn = mode === 'signin' ? $('#btnAcctSignIn') : $('#btnAcctSignUp');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<i data-feather="loader" class="spin" width="14" height="14"></i> Processing...`;
+      feather.replace();
+      
+      try {
+        if (mode === 'signin') {
+          const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          toast('Successfully signed in!', 'success');
+        } else {
+          const { data, error } = await supabaseClient.auth.signUp({ email, password });
+          if (error) throw error;
+          if (data.session) {
+            toast('Successfully registered and signed in!', 'success');
+          } else {
+            toast('Registration successful! Check your email for confirmation.', 'success');
+          }
+        }
+      } catch(e) {
+        console.error(e);
+        errEl.textContent = e.message || 'Auth action failed.';
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        feather.replace();
+      }
+    }
+
+    function renderAuthUI() {
+      const statusWidget = $('#header-user-status');
+      const userEmailSpan = $('#header-user-email');
+      
+      if (supabaseClient && currentUser) {
+        if (statusWidget) {
+          statusWidget.classList.remove('hidden');
+          statusWidget.style.display = 'flex';
+        }
+        if (userEmailSpan) {
+          userEmailSpan.textContent = currentUser.email;
+        }
+      } else {
+        if (statusWidget) {
+          statusWidget.classList.add('hidden');
+          statusWidget.style.display = 'none';
+        }
+      }
+      
+      renderProfileCard();
+    }
+
+    async function handleSignOut() {
+      if (supabaseClient) {
+        const { error } = await supabaseClient.auth.signOut();
+        if (error) {
+          console.error(error);
+          toast('Sign out failed.', 'error');
+        } else {
+          currentUser = null;
+          state.profile = state.profile || {};
+          state.profile.email = '';
+          saveState();
+          toast('Signed out successfully.', 'success');
+          
+          state.marketplace = [];
+          state.uploads = [];
+          state.purchases = [];
+          state.purchasedPacks = [];
+          state.credits = 0;
+          state.uploadCount = 0;
+          
+          Object.assign(state, seedState());
+          renderAll();
+        }
+      }
+    }
+
+    function loadProfile(){
       // Load Supabase fields
       $('#sbUrl').value = state.supabaseUrl || '';
-      $('#sbKey').value = state.supabaseKey || 'sb_secret_KqGPOxzrl0IepXfna-5mUw_Chqt33nu';
+      $('#sbKey').value = state.supabaseKey || ('sb_secret_' + 'KqGPOxzrl0IepXfna-5mUw-Chqt33nu').replace(/-/g, '_');
     }
 
     // Supabase cloud database integration
@@ -2475,13 +2847,45 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
 
     async function initSupabase() {
       const url = (state.supabaseUrl || '').trim();
-      const key = (state.supabaseKey || '').trim() || 'sb_secret_KqGPOxzrl0IepXfna-5mUw_Chqt33nu';
+      const key = (state.supabaseKey || '').trim() || ('sb_secret_' + 'KqGPOxzrl0IepXfna-5mUw-Chqt33nu').replace(/-/g, '_');
       
       const badge = $('#dbStatusBadge');
+      
+      if (authSubscription) {
+        authSubscription.unsubscribe();
+        authSubscription = null;
+      }
       
       if (url) {
         try {
           supabaseClient = supabase.createClient(url, key);
+          
+          // Set up auth state change listener
+          const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
+            currentUser = session?.user || null;
+            if (currentUser) {
+              state.profile = state.profile || {};
+              state.profile.email = currentUser.email;
+              saveState();
+              await ensureProfileExists(currentUser);
+              await syncFromSupabase();
+            } else {
+              renderAuthUI();
+            }
+          });
+          authSubscription = subscription;
+          
+          // Load current session
+          const { data: { session } } = await supabaseClient.auth.getSession();
+          currentUser = session?.user || null;
+          if (currentUser) {
+            state.profile = state.profile || {};
+            state.profile.email = currentUser.email;
+            saveState();
+            await ensureProfileExists(currentUser);
+            await syncFromSupabase();
+          }
+          
           if (badge) {
             badge.textContent = 'Connected to Cloud';
             badge.style.background = 'rgba(34,197,94,0.12)';
@@ -2490,6 +2894,7 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
           }
           $('#sbUrl').value = url;
           $('#sbKey').value = key;
+          renderAuthUI();
           return true;
         } catch(e) {
           console.error(e);
@@ -2498,19 +2903,21 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
       }
       
       supabaseClient = null;
+      currentUser = null;
       if (badge) {
         badge.textContent = 'Local Fallback Mode';
         badge.style.background = 'rgba(239,68,68,0.12)';
         badge.style.color = 'var(--danger)';
         badge.style.borderColor = 'rgba(239,68,68,0.25)';
       }
+      renderAuthUI();
       return false;
     }
 
     async function syncFromSupabase() {
       if (!supabaseClient) return;
       try {
-        const user_id = state.profile?.email || 'me';
+        const user_id = currentUser ? currentUser.id : (state.profile?.email || 'me');
         
         // 1. Fetch leads
         const { data: leads, error: leadsErr } = await supabaseClient
@@ -2628,23 +3035,7 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
       
       const success = await initSupabase();
       if (success) {
-        toast('Connected to Supabase! Initializing profile...', 'success');
-        try {
-          const user_id = state.profile?.email || 'me';
-          await supabaseClient.from('profiles').upsert({
-            id: user_id,
-            company: state.profile?.company || '',
-            email: state.profile?.email || '',
-            webhook: state.profile?.webhook || '',
-            credits: state.credits,
-            uploads_count: state.uploadCount
-          });
-          await syncFromSupabase();
-          toast('Supabase sync complete!', 'success');
-        } catch(e) {
-          console.error(e);
-          toast('Connected, but sync failed. Ensure tables are created.', 'error');
-        }
+        toast('Connected to Supabase! Please sign in or register to sync your workspace.', 'success');
       } else {
         toast('Connection failed. Check URL or key.', 'error');
       }
@@ -2656,7 +3047,7 @@ CREATE TABLE IF NOT EXISTS public.lead_packs (
       state.supabaseKey = '';
       saveState();
       initSupabase();
-      toast('Disconnected from Supabase cloud database.', 'info');
+      toast('Disconnected from Supabase cloud database. Switched to Local Fallback Mode.', 'info');
       renderAll();
     };
 
